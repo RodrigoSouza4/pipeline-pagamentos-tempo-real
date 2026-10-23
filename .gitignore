@@ -1,0 +1,10 @@
+# Credenciais e variaveis de ambiente
+.env
+**/.env
+.env.*
+!.env.example
+
+# Arquivos temporarios
+__pycache__/
+*.pyc
+.vscode/

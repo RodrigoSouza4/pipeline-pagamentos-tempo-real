@@ -1,0 +1,20 @@
+
+{
+  "name": "pagamentos-postgres-cdc",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "127.0.0.1",
+    "database.port": "5432",
+    "database.user": "cdc_user",
+    "database.password": "${env:POSTGRES_CDC_PASSWORD}",
+    "database.dbname": "pagamentos_db",
+    "topic.prefix": "cdc",
+    "plugin.name": "pgoutput",
+    "publication.name": "pagamentos_publication",
+    "publication.autocreate.mode": "disabled",
+    "slot.name": "pagamentos_slot",
+    "table.include.list": "public.contas,public.transacoes",
+    "snapshot.mode": "initial"
+  }
+}

@@ -1,0 +1,43 @@
+
+services:
+  debezium:
+    image: quay.io/debezium/connect:3.3
+    container_name: pagamentos-debezium
+    network_mode: host
+    restart: "no"
+
+    environment:
+      BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS}"
+      GROUP_ID: "pagamentos-connect"
+
+      CONFIG_STORAGE_TOPIC: "pagamentos.connect.configs"
+      OFFSET_STORAGE_TOPIC: "pagamentos.connect.offsets"
+      STATUS_STORAGE_TOPIC: "pagamentos.connect.status"
+
+      POSTGRES_CDC_PASSWORD: "${POSTGRES_CDC_PASSWORD}"
+      CONNECT_CONFIG_PROVIDERS: "env"
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: "org.apache.kafka.common.config.provider.EnvVarConfigProvider"
+
+      CONFIG_STORAGE_REPLICATION_FACTOR: "3"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "3"
+      STATUS_STORAGE_REPLICATION_FACTOR: "3"
+
+      CONNECT_SECURITY_PROTOCOL: "SASL_SSL"
+      CONNECT_SASL_MECHANISM: "PLAIN"
+      CONNECT_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_API_KEY}" password="${KAFKA_API_SECRET}";'
+
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: "SASL_SSL"
+      CONNECT_PRODUCER_SASL_MECHANISM: "PLAIN"
+      CONNECT_PRODUCER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_API_KEY}" password="${KAFKA_API_SECRET}";'
+
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: "SASL_SSL"
+      CONNECT_CONSUMER_SASL_MECHANISM: "PLAIN"
+      CONNECT_CONSUMER_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_API_KEY}" password="${KAFKA_API_SECRET}";'
+
+      KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+
+      REST_HOST_NAME: "127.0.0.1"
+      REST_PORT: "8083"
