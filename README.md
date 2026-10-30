@@ -116,6 +116,34 @@ Este projeto é um protótipo educacional. A regra identifica padrões suspeitos
 
 O uso de janelas sobrepostas pode produzir alertas repetidos. O projeto também depende de infraestrutura previamente configurada no PostgreSQL e no Confluent Cloud.
 
+
+## Evidências de funcionamento
+
+As capturas de tela dos testes estão disponíveis na pasta [evidencias](./evidencias).
+
+### PostgreSQL
+![Transações armazenadas no PostgreSQL](./evidencias/01-postgresql-transacoes.png)
+
+### Debezium
+![Contêiner Debezium](./evidencias/02-debezium-docker.png)
+
+![Conector CDC em execução](./evidencias/03-debezium-conector-running.png)
+
+### Apache Kafka — Transações
+![Mensagens recebidas pelo Kafka](./evidencias/04-kafka-transacoes.png)
+
+![Detalhes de uma transação](./evidencias/05-kafka-transacao-detalhada.png)
+
+### Apache Kafka — Alertas de fraude
+![Alertas publicados no Kafka](./evidencias/06-kafka-alertas-fraude.png)
+
+![Detalhes do alerta de fraude](./evidencias/07-alerta-fraude-detalhado.png)
+
+### Apache Flink SQL
+![Processamento com Flink SQL](./evidencias/08-flink-sql-processamento.png)
+
+![Código da detecção de fraudes](./evidencias/09-flink-sql-codigo-completo.png)
+
 ## Autor
 
 Desenvolvido por [RodrigoSouza4](https://github.com/RodrigoSouza4).
