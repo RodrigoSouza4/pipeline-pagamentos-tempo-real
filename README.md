@@ -6,6 +6,8 @@
 
 Este projeto implementa um fluxo de dados que começa no **PostgreSQL**, utiliza **Debezium (CDC)** para capturar alterações, publica eventos no **Apache Kafka (Confluent Cloud)** e processa transações com **Apache Flink SQL**. Quando são detectadas **três ou mais compras com o mesmo cartão em uma janela de 60 segundos**, um alerta é enviado ao tópico `pagamentos.alertas_fraude`.
 
+Além da detecção principal, foi validada uma **consulta Snapshot de enriquecimento** que associa alertas aos dados de clientes. Também foi validada a leitura de eventos de contas por meio de uma view e da função `FROM_CHANGELOG`. A **gravação contínua** desses dados em uma tabela `upsert`, porém, não foi concluída devido a um erro interno do serviço Flink.
+
 O projeto foi desenvolvido como protótipo educacional. As transações e os identificadores de cartões utilizados nos testes são fictícios; um alerta indica comportamento suspeito, **não uma fraude confirmada**.
 
 ## Objetivos
@@ -13,6 +15,7 @@ O projeto foi desenvolvido como protótipo educacional. As transações e os ide
 - Demonstrar o caminho completo do dado, da persistência ao alerta.
 - Aplicar **Change Data Capture (CDC)** para transportar alterações sem depender de consultas periódicas em lote.
 - Utilizar processamento contínuo com janelas temporais no Flink SQL.
+- Explorar o enriquecimento dos alertas com dados de contas e a interpretação de operações CDC.
 - Documentar configurações, resultados, limitações e evidências para facilitar a avaliação e a reprodução do ambiente.
 
 ## Tecnologias e decisões de arquitetura
@@ -23,7 +26,7 @@ O projeto foi desenvolvido como protótipo educacional. As transações e os ide
 | **Debezium** | Captura alterações via CDC | Publica mudanças do banco sem polling periódico |
 | **Apache Kafka** | Transporta e disponibiliza os eventos | Desacopla a ingestão do processamento e dos consumidores |
 | **Confluent Cloud** | Hospeda Kafka e os recursos gerenciados de streaming | Simplifica a operação da infraestrutura durante o protótipo |
-| **Apache Flink SQL** | Analisa compras e gera alertas | Permite consultas contínuas e janelas de tempo declarativas |
+| **Apache Flink SQL** | Analisa compras, gera alertas e permite consultas de enriquecimento | Oferece processamento contínuo, janelas e SQL declarativo |
 | **Docker Compose** | Executa o Kafka Connect com Debezium | Padroniza a execução local do conector |
 | **Git e GitHub** | Versiona o código e registra as evidências | Facilita auditoria, apresentação e evolução do projeto |
 
@@ -44,7 +47,7 @@ O projeto foi desenvolvido como protótipo educacional. As transações e os ide
                  └── cdc.public.transacoes
                            │
                            ▼
-                    Apache Flink SQL
+                     Apache Flink SQL
                  Regra: >= 3 compras/cartão
                  em 60 s (avanço de 10 s)
                            │
@@ -52,10 +55,12 @@ O projeto foi desenvolvido como protótipo educacional. As transações e os ide
                  pagamentos.alertas_fraude
                            │
                            ▼
-                  Consumo / investigação
+                   Consumo / investigação
 ```
 
-**Escopo implementado:** a regra de fraude demonstrada utiliza os eventos de `cdc.public.transacoes`. Embora o CDC também esteja configurado para a tabela `contas`, **a consulta atual não realiza enriquecimento por JOIN com os dados da conta**. Essa é uma evolução prevista.
+**Escopo implementado:** o fluxo principal de alertas utiliza os eventos de `cdc.public.transacoes` e publica resultados em `pagamentos.alertas_fraude`. Em uma etapa adicional, uma consulta **Snapshot** de enriquecimento combinou alertas com dados de contas e retornou resultados com identificação do cliente. Esse enriquecimento **não foi validado como publicação contínua** no tópico `pagamentos.alertas_fraude_enriquecidos`.
+
+Para os eventos de contas, também foi criada a view `eventos_contas_cdc`, usada em uma consulta `FROM_CHANGELOG` validada em modo Streaming. A tentativa de materializar continuamente esses eventos na tabela `contas_atualizadas` não foi concluída.
 
 ## Regra de detecção de possíveis fraudes
 
@@ -94,20 +99,21 @@ pipeline-pagamentos-tempo-real/
 │   ├── postgres-connector-backup.json
 │   └── .env.example
 ├── flink/
-│   └── detectar_fraudes.sql
+│   ├── detectar_fraudes.sql
+│   ├── detectar_fraudes_enriquecidas.sql
+│   ├── publicar_alertas_enriquecidos.sql
+│   ├── publicar_alertas_enriquecidos_v2.sql
+│   ├── converter_eventos_contas.sql
+│   └── criar_view_eventos_contas_cdc.sql
 ├── evidencias/
 │   ├── 01-postgresql-transacoes.png
-│   ├── 02-debezium-docker.png
-│   ├── 03-debezium-conector-running.png
-│   ├── 04-kafka-transacoes.png
-│   ├── 05-kafka-transacao-detalhada.png
-│   ├── 06-kafka-alertas-fraude.png
-│   ├── 07-alerta-fraude-detalhado.png
-│   ├── 08-flink-sql-processamento.png
-│   └── 09-flink-sql-codigo-completo.png
+│   ├── ...
+│   └── 41-flink-teste-from-changelog-view.png
 ├── .gitignore
 └── README.md
 ```
+
+Os scripts `publicar_alertas_enriquecidos.sql` e `publicar_alertas_enriquecidos_v2.sql` são **experimentos não validados para produção**; não representam uma publicação contínua de alertas enriquecidos comprovadamente funcional. A listagem da pasta `evidencias/` está abreviada: os arquivos intermediários permanecem disponíveis no repositório.
 
 O arquivo `debezium/.env` contém valores locais e **não deve ser versionado**.
 
@@ -119,6 +125,7 @@ O arquivo `debezium/.env` contém valores locais e **não deve ser versionado**.
 4. O Flink SQL lê as transações, filtra compras e agrupa os eventos por cartão e janela de tempo.
 5. Quando a regra é satisfeita, o Flink publica uma mensagem no tópico `pagamentos.alertas_fraude`.
 6. O alerta fica disponível para um consumidor ou processo posterior de investigação.
+7. Em testes complementares, consultas Snapshot permitiram associar alertas aos dados de clientes. Uma view de contas e `FROM_CHANGELOG` permitiram interpretar eventos CDC, mas a gravação contínua em `contas_atualizadas` permaneceu pendente.
 
 ## Como reproduzir o projeto
 
@@ -221,7 +228,7 @@ O resultado esperado é `RUNNING` tanto para o conector quanto para sua tarefa. 
 
 No Confluent Cloud, abra o tópico `cdc.public.transacoes` e verifique se os eventos do PostgreSQL chegaram. O conector também está configurado para `public.contas`, com o prefixo de tópicos `cdc`.
 
-Para testes adicionais de **INSERT**, **UPDATE** e **DELETE**, utilize dados fictícios e confira os efeitos no Kafka. **Esses três tipos de operação ainda não estão individualmente comprovados pelas evidências atuais.** A transformação `ExtractNewRecordState` simplifica os eventos e pode alterar a representação de exclusões; consulte a configuração do conector ao interpretar as mensagens.
+Foram observados eventos de inclusão e exclusão de uma conta de teste no tópico `cdc.public.contas`. A transformação `ExtractNewRecordState` simplifica os eventos e pode alterar a representação de exclusões; consulte a configuração do conector ao interpretar as mensagens.
 
 ### 8. Executar o processamento com Flink SQL
 
@@ -233,7 +240,15 @@ No ambiente Flink SQL do Confluent Cloud:
 4. Insira novas transações sintéticas e acompanhe as mensagens no tópico de alertas.
 5. Ao terminar o teste, interrompa a instrução Flink para evitar consumo desnecessário de recursos.
 
-**Nota:** o processamento demonstrado usa uma regra de compras por cartão; não há JOIN com `cdc.public.contas` na versão atual.
+**Nota:** o processamento principal demonstrado usa uma regra de compras por cartão. O enriquecimento com dados de contas foi testado separadamente em modo Snapshot.
+
+### 9. Consultar o enriquecimento e a interpretação de CDC
+
+O script `flink/detectar_fraudes_enriquecidas.sql` registra a consulta de enriquecimento de alertas, validada em modo **Snapshot**. A execução retornou seis linhas de alerta enriquecido nos testes; esse resultado não equivale à publicação contínua em um tópico Kafka.
+
+Para interpretar os eventos CDC de contas, execute `flink/criar_view_eventos_contas_cdc.sql` **apenas se a view ainda não existir**. Em seguida, consulte `flink/converter_eventos_contas.sql`, que usa `FROM_CHANGELOG` sobre a view. Essa consulta foi validada em modo **Streaming**.
+
+A tabela `contas_atualizadas` foi criada com chave primária e modo `upsert`, mas o `INSERT INTO ... FROM_CHANGELOG(...)` apresentou `Internal error occurred`. **Não trate a gravação contínua nessa tabela como funcional nem execute os scripts experimentais de publicação enriquecida sem revisão.**
 
 ## Resultados observados
 
@@ -245,8 +260,11 @@ Durante os testes, foi possível:
 - Visualizar mensagens de transações no tópico Kafka de entrada.
 - Visualizar alertas `POSSIVEL_FRAUDE` publicados no tópico de saída.
 - Registrar a consulta Flink SQL utilizada na detecção.
+- Obter **seis linhas** de alertas enriquecidos em uma consulta Snapshot, associadas a dados de cliente.
+- Criar a view `eventos_contas_cdc` e consultar eventos de contas com `FROM_CHANGELOG` em modo Streaming.
+- Criar a estrutura da tabela `contas_atualizadas`, **sem conseguir validar sua alimentação contínua**.
 
-As evidências foram preservadas na pasta [`evidencias/`](./evidencias). As capturas de Flink incluem registros de uma instrução posteriormente interrompida; **não indicam que a consulta continua ativa atualmente**.
+As evidências foram preservadas na pasta [`evidencias/`](./evidencias). As capturas de Flink incluem registros de instruções posteriormente interrompidas; **não indicam que as consultas continuam ativas atualmente**. A evidência 41 documenta o teste de leitura com `FROM_CHANGELOG`.
 
 ## Evidências de funcionamento
 
@@ -278,6 +296,12 @@ As evidências foram preservadas na pasta [`evidencias/`](./evidencias). As capt
 
 ![Código da detecção de fraudes](./evidencias/09-flink-sql-codigo-completo.png)
 
+### Apache Flink SQL — leitura de eventos CDC
+
+![Teste de FROM_CHANGELOG com a view de contas](./evidencias/41-flink-teste-from-changelog-view.png)
+
+As demais capturas na pasta `evidencias/` documentam testes intermediários, consultas, configurações e tentativas de evolução do pipeline.
+
 ## Segurança e controle de acesso
 
 - As credenciais do PostgreSQL e do Kafka são fornecidas por variáveis de ambiente.
@@ -290,7 +314,7 @@ As evidências foram preservadas na pasta [`evidencias/`](./evidencias). As capt
 
 Durante a operação, monitore o estado do conector e das tarefas, a chegada de mensagens aos tópicos, as instruções Flink e os indicadores de consumo e faturamento no Confluent Cloud.
 
-**Custo do projeto:** o valor efetivamente cobrado **não foi documentado nesta entrega**. Para registrar um custo real, consulte o painel de faturamento do Confluent Cloud, informe o período dos testes, o consumo e a eventual utilização de créditos gratuitos. Não é correto assumir custo zero apenas por utilizar uma avaliação gratuita.
+**Custo do projeto:** em uma consulta ao painel de faturamento durante os testes, foram observados créditos promocionais e cobranças compensadas por esses créditos. Isso **não garante custo zero em períodos futuros**. Os valores dependem do período consultado e dos recursos ativos. Confira sempre o painel de faturamento antes de encerrar o ambiente.
 
 ### Como encerrar
 
@@ -313,12 +337,14 @@ Este projeto é um protótipo educacional e apresenta as seguintes limitações:
 
 - A regra de três compras em 60 segundos sinaliza suspeitas, mas não confirma fraudes.
 - Janelas sobrepostas podem gerar múltiplos alertas para a mesma sequência de transações.
-- A consulta atual não enriquece as transações com os dados da tabela `contas`.
-- Não há evidência individual publicada de INSERT, UPDATE e DELETE, nem demonstração documentada de evolução compatível de esquema no Schema Registry.
+- O enriquecimento com dados de contas foi validado em **Snapshot**, mas sua publicação contínua em Kafka **não foi comprovada**.
+- A gravação contínua em `contas_atualizadas` falhou com `Internal error occurred` em uma instrução `INSERT INTO` que utiliza `FROM_CHANGELOG`; o `EXPLAIN` relacionado também apresentou erro interno. Os logs consultados não exibiram detalhes adicionais, portanto a causa permanece indeterminada.
+- Os scripts experimentais de publicação de alertas enriquecidos não constituem uma solução validada.
+- Não foi demonstrada evolução compatível de esquema no Schema Registry.
 - A reprodução depende de configurações externas do PostgreSQL, Docker e Confluent Cloud.
-- O custo real do ambiente ainda precisa ser registrado.
+- Os custos devem ser verificados diretamente no painel da conta para cada período de execução.
 
-**Evoluções possíveis:** adicionar JOIN com dados de contas, criar regras complementares de risco, tratar eventos inválidos em um tópico separado, comprovar a evolução de esquemas e automatizar a preparação do ambiente.
+**Evoluções possíveis:** investigar a falha de planejamento/gravação com o suporte da Confluent, implementar e validar publicação contínua de alertas enriquecidos, criar regras complementares de risco, tratar eventos inválidos em um tópico separado, comprovar a evolução de esquemas e automatizar a preparação do ambiente.
 
 ## Autor
 
